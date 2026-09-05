@@ -16,6 +16,16 @@ Source edition can be found on github.
   these values.  See
   [Ingesting change data capture (CDC) records](/formats/avro#ingesting-cdc-records).
 
+- The Delta Lake output connector can keep a table equal to its view
+  instead of appending a change log. Set `update_mode` to `merge`: the
+  connector appends each new row version and marks the old one deleted
+  in a deletion vector, so a reader sees one live row per key and a
+  flush never rewrites a data file. An existing target table must have
+  `delta.enableDeletionVectors` set, and the pipeline must be the only
+  process writing rows to it. `optimize_interval_secs` has the
+  connector compact the table itself, which reclaims the superseded
+  rows. See [merge mode](/connectors/sinks/delta#merge-mode).
+
 - Incompatible change (ad-hoc queries): the `hash` result format and
   `Pipeline.query_hash()` in the Python SDK return a different hash for the
   same rows than earlier releases.  Compare only hashes taken from the same
