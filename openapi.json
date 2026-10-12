@@ -14388,6 +14388,11 @@
           },
           "program_schema": {
             "description": "Program schema."
+          },
+          "udf_library": {
+            "type": "string",
+            "description": "The program's Rust UDFs compiled to a native shared library (a Linux `cdylib`),\nbase64-encoded, which the Gen-2 engine loads into its process to run them. `None`\nwhen the program has no Rust UDFs, and for Rust-compiled pipelines, which link their\nUDFs into the binary.",
+            "nullable": true
           }
         }
       },

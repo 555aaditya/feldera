@@ -4949,6 +4949,13 @@ export type ProgramIr = {
    * Program schema.
    */
   program_schema: unknown
+  /**
+   * The program's Rust UDFs compiled to a native shared library (a Linux `cdylib`),
+   * base64-encoded, which the Gen-2 engine loads into its process to run them. `None`
+   * when the program has no Rust UDFs, and for Rust-compiled pipelines, which link their
+   * UDFs into the binary.
+   */
+  udf_library?: string | null
 }
 
 /**
