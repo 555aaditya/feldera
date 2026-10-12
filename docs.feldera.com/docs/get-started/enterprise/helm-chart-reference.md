@@ -202,6 +202,8 @@ Default settings applied to all pipeline pods.
 |-----|---------|-------------|
 | `pipeline.serviceAccountName` | `null` | Default Kubernetes service account for pipeline pods. Typically used for IRSA-based cloud authentication. |
 | `pipeline.env` | `null` | List of environment variables injected into all pipeline pods. |
+| `pipeline.extraVolumes` | `null` | List of extra volumes added to all pipeline pods, after the built-in ones. For example a projected service account token for workload identity federation. These names are reserved and fail the install: `config-volume`, `container-status`, `https-config`, `public-ca-config`, `secret-<n>` and names ending in `-storage`. |
+| `pipeline.extraVolumeMounts` | `null` | List of extra volume mounts added to the pipeline container, after the built-in ones. Do not mount over `/pipeline-config`, `/status`, `/https-config`, `/public-ca-config`, `/etc/feldera-secrets` or `/pipeline-storage`. Placeholders such as `{id}` in these values are replaced with the pipeline's own values. |
 | `pipeline.allowInitContainers` | `true` | Allow pipelines to specify init containers (e.g., sidecars) via runtime configuration. See [sidecar containers](/pipelines/sidecar). |
 | `pipeline.allowProfiling` | `false` | Grant the `PERFMON` and `IPC_LOCK` capabilities to pipeline containers, enabling performance profiling. Node kernel settings may also be required, see [Visualizing profiles](/operations/visualizing-profiles.md#enterprise-environments). |
 
