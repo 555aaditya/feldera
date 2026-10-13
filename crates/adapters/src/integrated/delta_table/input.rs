@@ -1179,6 +1179,19 @@ struct DeltaResumeInfo {
     /// the same version even if they stopped at different points.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     snapshot_pending: bool,
+
+    /// True if a distributed connector with `snapshot_pending` had already
+    /// requested the transaction for its share of the snapshot, which every
+    /// host joins (see
+    /// [`DeltaTableInputEndpointInner::start_distributed_snapshot_transaction`]).
+    ///
+    /// A host saves this state only if that transaction committed without its
+    /// share, for example because the host failed or the pipeline suspended.
+    /// The other hosts may then have finished their shares, and they will not
+    /// join a new such transaction, so on resume this host reads its share in
+    /// a transaction of its own.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    snapshot_started: bool,
 }
 
 impl DeltaResumeInfo {
@@ -1189,6 +1202,7 @@ impl DeltaResumeInfo {
             snapshot_timestamp: None,
             eoi: false,
             snapshot_pending: false,
+            snapshot_started: false,
         }
     }
 
@@ -1199,6 +1213,7 @@ impl DeltaResumeInfo {
             snapshot_timestamp: None,
             eoi: true,
             snapshot_pending: false,
+            snapshot_started: false,
         }
     }
 
@@ -1215,6 +1230,7 @@ impl DeltaResumeInfo {
             snapshot_timestamp: None,
             eoi,
             snapshot_pending: false,
+            snapshot_started: false,
         }
     }
 
@@ -1228,6 +1244,7 @@ impl DeltaResumeInfo {
             snapshot_timestamp: Some(timestamp.to_string()),
             eoi: false,
             snapshot_pending: false,
+            snapshot_started: false,
         }
     }
 
@@ -1239,6 +1256,7 @@ impl DeltaResumeInfo {
             snapshot_timestamp: None,
             eoi: false,
             snapshot_pending: true,
+            snapshot_started: false,
         }
     }
 
@@ -1925,6 +1943,12 @@ impl DeltaTableInputEndpointInner {
             || std::env::var_os(PER_HOST_SNAPSHOT_TRANSACTIONS_ENV).is_some()
             || !self.config.snapshot()
             || !Self::snapshot_incomplete(&self.last_resume_status.lock().unwrap())
+            || self
+                .last_resume_status
+                .lock()
+                .unwrap()
+                .as_ref()
+                .is_some_and(|status| status.snapshot_started)
         {
             return;
         }
@@ -1932,6 +1956,14 @@ impl DeltaTableInputEndpointInner {
         let Some(label) = self.allocate_snapshot_transaction_label() else {
             return;
         };
+        // A checkpoint taken after the transaction commits without this
+        // host's share, which a `Rollback` allows, records that this host
+        // started it.
+        let mut checkpointable = self.last_checkpointable_status.lock().unwrap();
+        if checkpointable.snapshot_pending {
+            checkpointable.snapshot_started = true;
+        }
+        drop(checkpointable);
         // Every host makes this request, so the coordinator keeps the
         // transaction open until every host has committed its part.  During a
         // snapshot, every queue entry's resume info is `None`.
@@ -6979,6 +7011,42 @@ mod distributed_snapshot_tests {
                 .start_distributed_snapshot_transaction(&mut receiver)
                 .await;
             assert_eq!(endpoint.queue.len(), 0, "{transaction_mode} {shard:?}");
+        }
+    }
+
+    /// A host that resumes before it started its share of the snapshot reads
+    /// it in the transaction that every host joins, and records that it
+    /// started it.  A host that resumes after it started its share reads it in
+    /// a transaction of its own, because the other hosts may have finished
+    /// theirs and will not join.
+    #[tokio::test]
+    async fn resumed_share_joins_all_hosts_transaction_only_if_not_started() {
+        let config = json!({"uri": "/tmp/t", "mode": "snapshot", "transaction_mode": "snapshot"});
+        for started in [false, true] {
+            let resume_info = DeltaResumeInfo {
+                snapshot_started: started,
+                ..DeltaResumeInfo::snapshot_pending(7)
+            };
+            let consumer = MockInputConsumer::new();
+            let endpoint = resumed_endpoint(
+                config.clone(),
+                Some(shard(2)),
+                None,
+                consumer.clone(),
+                Some(resume_info),
+            );
+            let (_sender, mut receiver) = channel(PipelineState::Running);
+            endpoint
+                .start_distributed_snapshot_transaction(&mut receiver)
+                .await;
+            assert_eq!(endpoint.queue.len(), usize::from(!started), "{started}");
+            assert!(
+                endpoint
+                    .last_checkpointable_status
+                    .lock()
+                    .unwrap()
+                    .snapshot_started
+            );
         }
     }
 
