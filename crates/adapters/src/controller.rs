@@ -4489,18 +4489,23 @@ impl CircuitThread {
                 }
             } else {
                 if !self.replaying() {
+                    // An endpoint whose `open()` has not returned yet has no
+                    // reader, so it cannot be queued and would never report
+                    // progress.  It has no input yet either, so leave it for a
+                    // future step.
+                    let Some(reader) = status.reader.as_ref() else {
+                        continue;
+                    };
+
                     // Don't request a checkpoint if we're processing a
                     // transaction. The `checkpoint_requested` flag requires the
                     // connector to get to a checkpointable state as fast as
                     // possible, which may cause connector's performance to
                     // drop, e.g., some connectors may return 1 record per step.
-                    if let Some(reader) = status.reader.as_ref() {
-                        reader.queue(
-                            self.checkpoint_requested()
-                                && self.controller.get_transaction_state()
-                                    == TransactionState::None,
-                        )
-                    }
+                    reader.queue(
+                        self.checkpoint_requested()
+                            && self.controller.get_transaction_state() == TransactionState::None,
+                    )
                 } else {
                     // We already started the input adapters replaying. The set of
                     // input adapters can't change during replay (because we disable
