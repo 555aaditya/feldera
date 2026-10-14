@@ -1667,7 +1667,8 @@ export type DeltaTableWriterConfig = {
   max_retries?: number | null
   mode?: DeltaTableWriteMode
   /**
-   * Compact the target table from the connector, at most once every this many seconds.
+   * Compact the target table from the connector, at most once per this interval, for
+   * example `1h`.
    *
    * Only used when `update_mode` is `merge`. Merge mode marks an old row version deleted
    * but leaves it in place. Without compaction the table keeps growing and reads keep
@@ -1675,8 +1676,8 @@ export type DeltaTableWriterConfig = {
    * scheduled `OPTIMIZE` leaves behind.
    *
    * Maintenance is normally the table administrator's job, which is why this is off by
-   * default. Set it for tables where Feldera is the only writer. Hourly (`3600`) or daily
-   * (`86400`) is typical. A short interval is safe: a run costs what needs doing, not the
+   * default. Set it for tables where Feldera is the only writer. Hourly (`1h`) or daily
+   * (`1d`) is typical. A short interval is safe: a run costs what needs doing, not the
    * size of the table, and two runs cannot overlap. A large backlog is cleared over
    * several runs.
    *
@@ -1687,7 +1688,7 @@ export type DeltaTableWriterConfig = {
    *
    * Default: none, meaning the connector never compacts.
    */
-  optimize_interval_secs?: number | null
+  optimize_interval?: string | null
   /**
    * Number of parallel threads used by the connector.
    *
@@ -1721,7 +1722,7 @@ export type DeltaTableWriterConfig = {
     | number
     | null
     | DeltaTableWriteMode
-    | number
+    | string
     | null
     | number
     | null
