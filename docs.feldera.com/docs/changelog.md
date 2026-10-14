@@ -22,6 +22,14 @@ Source edition can be found on github.
   and the limit, instead of reaching the server. See
   [NATS output connector](/connectors/sinks/nats).
 
+- Bug fix (Iceberg input connector): in `snapshot_and_follow` mode, a pipeline
+  that restarted from a checkpoint taken after the connector read the
+  initial snapshot read that snapshot again, so a table without a primary
+  key got duplicate rows.  Now the connector continues to follow the table
+  after the last snapshot that it ingested.  A checkpoint taken before this
+  fix still makes the connector read the snapshot again once.  See
+  [Iceberg input connector](/connectors/sources/iceberg).
+
 ## v0.362.0
 
 - Incompatible change (SQL): the `emit_final` property of a view must
