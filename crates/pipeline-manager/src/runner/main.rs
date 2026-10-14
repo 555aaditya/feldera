@@ -5,6 +5,9 @@ use crate::db::probe::DbProbe;
 use crate::db::storage::Storage;
 use crate::db::storage_postgres::StoragePostgres;
 use crate::db::types::pipeline::PipelineId;
+use crate::db::types::resources_status::ResourcesDesiredStatus;
+use crate::db::types::storage::StorageStatus;
+use crate::db::types::tenant::TenantId;
 use crate::error::ManagerError;
 use crate::runner::error::RunnerError;
 use crate::runner::pipeline_automata::PipelineAutomaton;
@@ -18,6 +21,8 @@ use actix_web::HttpResponseBuilder;
 use actix_web::Responder;
 use actix_web::{HttpServer, get, web};
 use async_stream::try_stream;
+use feldera_types::deployment::DeploymentState;
+use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::net::TcpListener;
 use std::str::FromStr;
@@ -238,6 +243,50 @@ async fn get_logs(
     }
 }
 
+/// Query of the runner's `/deployment` route.
+#[derive(Deserialize)]
+pub(crate) struct DeploymentQuery {
+    pub tenant_id: Uuid,
+}
+
+/// Observes what exists for a pipeline, as reported by the pipeline executor.
+async fn get_deployment<E: PipelineExecutor + 'static>(
+    db: web::Data<Arc<Mutex<StoragePostgres>>>,
+    config: web::Data<E::Config>,
+    query: web::Query<DeploymentQuery>,
+    path: web::Path<String>,
+) -> Result<HttpResponse, ManagerError> {
+    let pipeline_id = path.into_inner();
+    let pipeline_id = PipelineId(Uuid::from_str(&pipeline_id).map_err(|e| {
+        ManagerError::from(ApiError::InvalidUuidParam {
+            value: pipeline_id.clone(),
+            error: e.to_string(),
+        })
+    })?);
+    let pipeline = db
+        .lock()
+        .await
+        .get_pipeline_by_id_for_monitoring(TenantId(query.tenant_id), pipeline_id)
+        .await?;
+    let compute_expected = match pipeline.deployment_resources_desired_status {
+        ResourcesDesiredStatus::Provisioned => DeploymentState::Current,
+        ResourcesDesiredStatus::Stopped => DeploymentState::NotFound,
+    };
+    let storage_expected = match pipeline.storage_status {
+        StorageStatus::InUse => DeploymentState::Current,
+        StorageStatus::Cleared | StorageStatus::Clearing => DeploymentState::NotFound,
+    };
+    let deployment = E::observe_deployment(
+        &config,
+        pipeline_id,
+        pipeline.deployment_config.as_ref(),
+        compute_expected,
+        storage_expected,
+    )
+    .await?;
+    Ok(HttpResponse::Ok().json(deployment))
+}
+
 /// Main to start the runner, which consists of starting an HTTP(S) server and
 /// a reconciliation loop which matches pipelines with runner automatons.
 pub async fn runner_main<E: PipelineExecutor + 'static>(
@@ -256,12 +305,20 @@ pub async fn runner_main<E: PipelineExecutor + 'static>(
     // Setup HTTP(S) server
     let data_healthz = web::Data::new(DbProbe::new(db.clone()).await);
     let data_logs = web::Data::new(pipelines.clone());
+    let data_db = web::Data::new(db.clone());
+    let data_config = web::Data::new(config.clone());
     let server = HttpServer::new(move || {
         actix_web::App::new()
             .app_data(data_healthz.clone())
             .app_data(data_logs.clone())
+            .app_data(data_db.clone())
+            .app_data(data_config.clone())
             .service(get_healthz)
             .service(get_logs)
+            .route(
+                "/deployment/{pipeline_id}",
+                web::get().to(get_deployment::<E>),
+            )
     })
     .workers(common_config.http_workers)
     .worker_max_blocking_threads(std::cmp::max(512 / common_config.http_workers, 1));

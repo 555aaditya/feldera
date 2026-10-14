@@ -678,6 +678,55 @@ impl RunnerInteraction {
         Ok(builder.streaming(response))
     }
 
+    /// Retrieves through the runner what exists for the pipeline now.
+    pub(crate) async fn get_deployment_from_pipeline(
+        &self,
+        client: &awc::Client,
+        tenant_id: TenantId,
+        pipeline_name: &str,
+    ) -> Result<HttpResponse, ManagerError> {
+        let pipeline = self
+            .db
+            .lock()
+            .await
+            .get_pipeline_for_monitoring(tenant_id, pipeline_name)
+            .await?;
+        let url = format!(
+            "{}://{}:{}/deployment/{}?tenant_id={}",
+            if self.common_config.enable_https {
+                "https"
+            } else {
+                "http"
+            },
+            self.common_config.runner_host,
+            self.common_config.runner_port,
+            pipeline.id,
+            tenant_id.0,
+        );
+        let unreachable = |error: String| RunnerError::RunnerInteractionUnreachable { error };
+        let mut response = client
+            .request(Method::GET, &url)
+            .timeout(Self::RUNNER_HTTP_REQUEST_TIMEOUT)
+            .send()
+            .await
+            .map_err(|e| match e {
+                SendRequestError::Timeout => unreachable(format_runner_timeout_error_message(
+                    Self::RUNNER_HTTP_REQUEST_TIMEOUT,
+                    e,
+                )),
+                _ => unreachable(e.to_string()),
+            })?;
+        let body = response
+            .body()
+            .await
+            .map_err(|e| unreachable(format!("unable to read the runner response: {e}")))?;
+        let mut builder = HttpResponseBuilder::new(response.status());
+        if let Some(content_type) = response.headers().get(header::CONTENT_TYPE) {
+            builder.insert_header((header::CONTENT_TYPE, content_type.clone()));
+        }
+        Ok(builder.body(body))
+    }
+
     /// Format HTTP request for logging.
     pub(crate) fn format_request(request: &ClientRequest) -> String {
         format!(
