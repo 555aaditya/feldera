@@ -2375,7 +2375,7 @@ impl Controller {
             .transaction_info
             .lock()
             .unwrap()
-            .coordinator_members = coordination_request.transaction_members.clone();
+            .set_coordinator_transaction(&coordination_request);
         *self.inner.coordination_request.lock().unwrap() = Some(coordination_request);
         self.inner.unpark_circuit();
     }
@@ -7201,7 +7201,7 @@ pub struct TransactionInfo {
     /// In a multihost pipeline, the connectors that need every host in the
     /// transaction, and that this host has finished in the current transaction
     /// (see [TransactionCoordination::all_hosts_done]).
-    all_hosts_done: HashSet<String>,
+    all_hosts_done: HashMap<String, Option<TransactionId>>,
 
     /// Actual pipeline state, set by the circuit thread.
     transaction_state: TransactionState,
@@ -7225,6 +7225,10 @@ pub struct TransactionInfo {
     /// not say, because it predates this.
     coordinator_members: Option<BTreeSet<String>>,
 
+    /// In a multihost pipeline, the coordinator's id for the open transaction,
+    /// from its latest step request (see [StepRequest::transaction_id]).
+    coordinator_transaction_id: Option<TransactionId>,
+
     /// For sending updates to the coordination status to the coordinator.
     sender: tokio::sync::watch::Sender<TransactionCoordination>,
 }
@@ -7238,12 +7242,39 @@ impl TransactionInfo {
             is_multihost,
             last_transaction_id: 0,
             initiators: TransactionInitiators::default(),
-            all_hosts_done: HashSet::new(),
+            all_hosts_done: HashMap::new(),
             transaction_state: TransactionState::None,
             replay_transaction_id: None,
             replay_open_transaction_id: None,
             coordinator_members: None,
+            coordinator_transaction_id: None,
             sender,
+        }
+    }
+
+    /// Records what the coordinator's step request says about the open
+    /// transaction.
+    ///
+    /// A connector in `all_hosts_done` without a transaction id finished
+    /// before the coordinator told this host the id.  It belongs to the first
+    /// transaction that this host hears about, so this fills in that id.  The
+    /// coordinator cannot commit that transaction before it sees this host's
+    /// report, and it tells this host the id before the commit, so a report
+    /// that the coordinator sees after the commit always has the id.
+    fn set_coordinator_transaction(&mut self, request: &StepRequest) {
+        self.coordinator_members = request.transaction_members.clone();
+        self.coordinator_transaction_id = request.transaction_id;
+        if let Some(id) = request.transaction_id {
+            let mut changed = false;
+            for done_in in self.all_hosts_done.values_mut() {
+                if done_in.is_none() {
+                    *done_in = Some(id);
+                    changed = true;
+                }
+            }
+            if changed {
+                self.update_transaction_status();
+            }
         }
     }
 
@@ -7380,7 +7411,8 @@ impl TransactionInfo {
             {
                 Some(phase) => {
                     if phase.all_hosts {
-                        self.all_hosts_done.insert(endpoint_name.to_string());
+                        self.all_hosts_done
+                            .insert(endpoint_name.to_string(), self.coordinator_transaction_id);
                     }
                     Ok(())
                 }
@@ -10687,9 +10719,11 @@ mod controller_init_tests {
 
 #[cfg(test)]
 mod all_hosts_transaction_tests {
-    use std::collections::HashSet;
+    use std::collections::{HashMap, HashSet};
 
-    use feldera_types::coordination::TransactionCoordination;
+    use feldera_types::coordination::{
+        StepAction, StepInputs, StepRequest, TransactionCoordination,
+    };
 
     use super::TransactionInfo;
 
@@ -10715,17 +10749,53 @@ mod all_hosts_transaction_tests {
         assert_eq!(status.all_hosts, names(&["d"]));
         assert!(status.all_hosts_done.is_empty());
 
+        // The host reports the coordinator's id for the transaction in which
+        // it finished `d`.
+        info.set_coordinator_transaction(
+            &StepRequest::new(0, StepAction::Idle, StepInputs::All).with_transaction_id(Some(7)),
+        );
         info.commit_transaction_from_connector("d").unwrap();
         info.commit_transaction_from_connector("x").unwrap();
         info.update_transaction_status();
         let status = receiver.borrow().clone();
         assert!(status.requests.is_empty());
         assert!(status.all_hosts.is_empty());
-        assert_eq!(status.all_hosts_done, names(&["d"]));
+        assert_eq!(
+            status.all_hosts_done,
+            HashMap::from([("d".to_string(), Some(7))])
+        );
 
         // The transaction starts committing.
         info.clear_initiators();
         assert!(receiver.borrow().all_hosts_done.is_empty());
+    }
+
+    /// A host that finishes a connector before it learns the open
+    /// transaction's id reports it without one, until a step request tells it
+    /// the id.
+    #[test]
+    fn host_fills_in_transaction_id() {
+        let (sender, receiver) = tokio::sync::watch::channel(TransactionCoordination::default());
+        let mut info = TransactionInfo::new(true, sender);
+        let request =
+            |id| StepRequest::new(0, StepAction::Idle, StepInputs::All).with_transaction_id(id);
+        let done = |id| HashMap::from([("d".to_string(), id)]);
+
+        info.start_transaction_from_connector("d", Some("snapshot-0"), true)
+            .unwrap();
+        info.commit_transaction_from_connector("d").unwrap();
+        info.update_transaction_status();
+        assert_eq!(receiver.borrow().all_hosts_done, done(None));
+
+        // A step request without a transaction does not say.
+        info.set_coordinator_transaction(&request(None));
+        assert_eq!(receiver.borrow().all_hosts_done, done(None));
+
+        // The first id that the host learns is the transaction's.
+        info.set_coordinator_transaction(&request(Some(3)));
+        assert_eq!(receiver.borrow().all_hosts_done, done(Some(3)));
+        info.set_coordinator_transaction(&request(Some(4)));
+        assert_eq!(receiver.borrow().all_hosts_done, done(Some(3)));
     }
 
     /// A connector joins the open transaction only once the coordinator counts
