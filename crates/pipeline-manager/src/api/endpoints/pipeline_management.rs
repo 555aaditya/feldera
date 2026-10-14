@@ -33,6 +33,8 @@ use actix_web::{
 use chrono::{DateTime, Utc};
 use feldera_types::adapter_stats::PipelineStatsErrorsResponse;
 use feldera_types::config::{InputEndpointConfig, OutputEndpointConfig, RuntimeConfig};
+#[allow(unused_imports)] // Used by the OpenAPI annotation.
+use feldera_types::deployment::PipelineDeployment;
 use feldera_types::error::ErrorResponse;
 use feldera_types::pipeline_diff::{PipelineDiff, compute_pipeline_diff};
 use feldera_types::program_schema::ProgramSchema;
@@ -2202,7 +2204,7 @@ pub(crate) async fn get_pipeline_logs(
     responses(
         (status = OK
             , description = "Pipeline deployment retrieved successfully"
-            , body = feldera_types::deployment::PipelineDeployment),
+            , body = PipelineDeployment),
         (status = BAD_REQUEST
             , description = "The `deployment` unstable feature is not enabled"
             , body = ErrorResponse),

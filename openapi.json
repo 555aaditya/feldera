@@ -3919,7 +3919,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/feldera_types.deployment.PipelineDeployment"
+                  "$ref": "#/components/schemas/PipelineDeployment"
                 }
               }
             }

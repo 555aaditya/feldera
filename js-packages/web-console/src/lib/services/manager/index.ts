@@ -310,6 +310,7 @@ export type {
   GetPipelineDeploymentData,
   GetPipelineDeploymentError,
   GetPipelineDeploymentErrors,
+  GetPipelineDeploymentResponse,
   GetPipelineDeploymentResponses,
   GetPipelineError,
   GetPipelineErrors,

@@ -8338,8 +8338,11 @@ export type GetPipelineDeploymentResponses = {
   /**
    * Pipeline deployment retrieved successfully
    */
-  200: unknown
+  200: PipelineDeployment
 }
+
+export type GetPipelineDeploymentResponse =
+  GetPipelineDeploymentResponses[keyof GetPipelineDeploymentResponses]
 
 export type PostPipelineDiffData = {
   /**
