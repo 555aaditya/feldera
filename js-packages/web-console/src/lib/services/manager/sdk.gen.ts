@@ -1178,8 +1178,7 @@ export const getPipelineDataflowGraph = <ThrowOnError extends boolean = true>(
  *
  * `state` values follow Kubernetes kstatus: `Current`, `InProgress`, `Failed`, `Terminating`,
  * `NotFound` and `Unknown`. The top-level `state` summarizes the hosts. Runners that do not
- * observe their resources return the spec only. Experimental: available only when the
- * `deployment` unstable feature is enabled.
+ * observe their resources return the spec only.
  */
 export const getPipelineDeployment = <ThrowOnError extends boolean = true>(
   options: Options<GetPipelineDeploymentData, ThrowOnError>

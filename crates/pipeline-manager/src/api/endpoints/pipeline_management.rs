@@ -2193,8 +2193,7 @@ pub(crate) async fn get_pipeline_logs(
 ///
 /// `state` values follow Kubernetes kstatus: `Current`, `InProgress`, `Failed`, `Terminating`,
 /// `NotFound` and `Unknown`. The top-level `state` summarizes the hosts. Runners that do not
-/// observe their resources return the spec only. Experimental: available only when the
-/// `deployment` unstable feature is enabled.
+/// observe their resources return the spec only.
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
@@ -2205,9 +2204,6 @@ pub(crate) async fn get_pipeline_logs(
         (status = OK
             , description = "Pipeline deployment retrieved successfully"
             , body = PipelineDeployment),
-        (status = BAD_REQUEST
-            , description = "The `deployment` unstable feature is not enabled"
-            , body = ErrorResponse),
         (status = NOT_FOUND
             , description = "Pipeline with that name does not exist"
             , body = ErrorResponse
@@ -2229,12 +2225,6 @@ pub(crate) async fn get_pipeline_deployment(
     tenant_id: ReqData<TenantId>,
     path: web::Path<String>,
 ) -> Result<HttpResponse, ManagerError> {
-    if !has_unstable_feature("deployment") {
-        Err(ApiError::UnsupportedPipelineAction {
-            action: "GET deployment".to_string(),
-            reason: "/deployment endpoint is disabled. Set FELDERA_UNSTABLE_FEATURES=\"deployment\" to enable.".to_string(),
-        })?;
-    }
     state
         .runner
         .get_deployment_from_pipeline(&client, *tenant_id, &path.into_inner())

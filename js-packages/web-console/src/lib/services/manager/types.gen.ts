@@ -8320,10 +8320,6 @@ export type GetPipelineDeploymentData = {
 
 export type GetPipelineDeploymentErrors = {
   /**
-   * The `deployment` unstable feature is not enabled
-   */
-  400: ErrorResponse
-  /**
    * Pipeline with that name does not exist
    */
   404: ErrorResponse

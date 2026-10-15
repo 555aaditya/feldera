@@ -3900,7 +3900,7 @@
           "Metrics & Debugging"
         ],
         "summary": "Get Pipeline Deployment",
-        "description": "Required role: `read` or higher.\n\nDesired versus current CPU, memory, and storage per host, and the state of each change.\nThe pipeline's `deployment_status` is the lifecycle Feldera wants; this endpoint is what\nexists in the runner's platform (for example Kubernetes) now.\n\n`state` values follow Kubernetes kstatus: `Current`, `InProgress`, `Failed`, `Terminating`,\n`NotFound` and `Unknown`. The top-level `state` summarizes the hosts. Runners that do not\nobserve their resources return the spec only. Experimental: available only when the\n`deployment` unstable feature is enabled.",
+        "description": "Required role: `read` or higher.\n\nDesired versus current CPU, memory, and storage per host, and the state of each change.\nThe pipeline's `deployment_status` is the lifecycle Feldera wants; this endpoint is what\nexists in the runner's platform (for example Kubernetes) now.\n\n`state` values follow Kubernetes kstatus: `Current`, `InProgress`, `Failed`, `Terminating`,\n`NotFound` and `Unknown`. The top-level `state` summarizes the hosts. Runners that do not\nobserve their resources return the spec only.",
         "operationId": "get_pipeline_deployment",
         "parameters": [
           {
@@ -3920,16 +3920,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PipelineDeployment"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "The `deployment` unstable feature is not enabled",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
