@@ -98,7 +98,7 @@ pub(crate) async fn fetch_pipeline_metrics(
     }
 
     let name = &pipeline.name;
-    // Use the location in `pipeline`: looking it up by name reads the database again.
+    // Forward to the location in `pipeline`, without a database read.
     let response = async {
         let location = pipeline.deployment_location_based_on_status()?;
         RunnerInteraction::forward_http_request_to_pipeline(
@@ -428,8 +428,8 @@ pipeline_status{pipeline="pipeline-00000000-0000-0000-0000-000000000001",pipelin
         assert_eq!(reported(&family(&pipeline)), "Unavailable");
     }
 
-    /// The metrics come from the location in the given descriptor, without a
-    /// database read: the pipeline is not in the database, so a lookup by name fails.
+    /// The metrics come from the location in the given descriptor. The pipeline
+    /// is not in the database, so any database read for it fails.
     #[actix_web::test]
     async fn metrics_are_fetched_from_the_given_location() {
         use super::fetch_pipeline_metrics;
